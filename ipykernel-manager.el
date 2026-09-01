@@ -2,6 +2,7 @@
 
 (require 'json)
 (require 'subr-x)
+(require 'url)
 
 (defgroup ipykernel-manager nil
   "Coordinate the Jupyter Eval kernel bridge."
@@ -23,6 +24,7 @@
 (defvar ipykernel-manager--kernel-pid-file nil)
 (defvar ipykernel-manager--event-port nil)
 (defvar ipykernel-manager--startup-timer nil)
+(defvar ipykernel-manager--frontend-timer nil)
 
 (defun ipykernel-manager--kernel-ids ()
   "Return the installed Jupyter kernel IDs."
@@ -74,6 +76,29 @@
    :connection-type 'pipe
    :noquery t))
 
+(defun ipykernel-manager--open-frontend (attempt)
+  "Open the Vite frontend after it becomes reachable, up to ATTEMPT 20."
+  (setq ipykernel-manager--frontend-timer nil)
+  (let ((url (format "http://127.0.0.1:%d/" ipykernel-manager-vite-port)))
+    (condition-case nil
+        (let ((buffer (url-retrieve-synchronously url t t 1)))
+          (when buffer
+            (kill-buffer buffer)
+            (setq ipykernel-manager--frontend-timer nil)
+            (if (fboundp 'xwidget-webkit-browse-url)
+                (xwidget-webkit-browse-url url)
+              (message "Jupyter Eval: Vite ready at %s; xwidget WebKit is unavailable"
+                       url))))
+      (error nil))
+    (when (and (not ipykernel-manager--frontend-timer)
+               (< attempt 20))
+      (setq ipykernel-manager--frontend-timer
+            (run-at-time 0.25 nil #'ipykernel-manager--open-frontend
+                         (1+ attempt))))
+    (when (and (not ipykernel-manager--frontend-timer)
+               (= attempt 20))
+      (message "Jupyter Eval: Vite did not become ready at %s" url))))
+
 (defun ipykernel-manager--publisher-filter (_process output)
   "Report publisher request results from OUTPUT in the Emacs message log."
   (dolist (line (split-string output "\n" t))
@@ -122,6 +147,8 @@
       (set-process-sentinel process #'ipykernel-manager--service-sentinel))
     (set-process-filter ipykernel-manager--publisher
                         #'ipykernel-manager--publisher-filter)
+    (setq ipykernel-manager--frontend-timer
+          (run-at-time 0 nil #'ipykernel-manager--open-frontend 0))
     (message
      "Jupyter Eval: connection=%s; event bridge=127.0.0.1:%d; Vite=127.0.0.1:%d"
      connection-file event-port ipykernel-manager-vite-port)))
@@ -210,6 +237,8 @@
   (interactive)
   (when (timerp ipykernel-manager--startup-timer)
     (cancel-timer ipykernel-manager--startup-timer))
+  (when (timerp ipykernel-manager--frontend-timer)
+    (cancel-timer ipykernel-manager--frontend-timer))
   (dolist (process (list ipykernel-manager--publisher
                          ipykernel-manager--subscriber
                          ipykernel-manager--vite))
@@ -238,6 +267,7 @@
         ipykernel-manager--vite nil
         ipykernel-manager--event-port nil
         ipykernel-manager--kernel-pid-file nil
+        ipykernel-manager--frontend-timer nil
         ipykernel-manager--startup-timer nil
         ipykernel-manager--connection-file nil)
   (message "Jupyter Eval bridge processes stopped"))

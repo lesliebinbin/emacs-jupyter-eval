@@ -6,8 +6,17 @@ type Cell = {
   requestId?: string
   code: string
   output: string
+  images: string[]
   time: string
   status: 'running' | 'complete'
+}
+
+function appendStream(output: string, text: string) {
+  return text.split('\r').reduce((current, segment, index) => {
+    if (index === 0) return current + segment
+    const lineStart = current.lastIndexOf('\n') + 1
+    return current.slice(0, lineStart) + segment
+  }, output)
 }
 
 function StatusDot({ active }: { active: boolean }) {
@@ -35,9 +44,12 @@ function App() {
           if (seen.has(eventKey)) continue
           seen.add(eventKey)
           if (event.type === 'execution_started') {
-            setCells((current) => current.some((cell) => cell.requestId === event.requestId) ? current : [...current, { id: 0, requestId: event.requestId, code: event.code, output: '', time: 'executing', status: 'running' }])
+            setCells((current) => current.some((cell) => cell.requestId === event.requestId) ? current : [...current, { id: 0, requestId: event.requestId, code: event.code, output: '', images: [], time: 'executing', status: 'running' }])
           } else if (event.requestId && event.type === 'stream') {
-            setCells((current) => current.map((cell) => cell.requestId === event.requestId ? { ...cell, output: cell.output + event.content.text } : cell))
+            setCells((current) => current.map((cell) => cell.requestId === event.requestId ? { ...cell, output: appendStream(cell.output, event.content.text) } : cell))
+          } else if (event.requestId && ['display_data', 'execute_result'].includes(event.type) && event.content.data?.['image/png']) {
+            const image = `data:image/png;base64,${event.content.data['image/png']}`
+            setCells((current) => current.map((cell) => cell.requestId === event.requestId && !cell.images.includes(image) ? { ...cell, images: [...cell.images, image] } : cell))
           } else if (event.requestId && event.type === 'execute_input') {
             setCells((current) => current.map((cell) => cell.requestId === event.requestId ? { ...cell, id: event.content.execution_count } : cell))
           } else if (event.requestId && event.type === 'status' && event.content.execution_state === 'idle') {
@@ -82,9 +94,10 @@ function App() {
           <article className="cell-card" key={cell.id}>
             <div className="cell-meta"><span>In [{cell.status === 'running' ? '*' : cell.id}]</span><time>{cell.status === 'running' ? 'executing' : cell.time}</time></div>
             <pre className="source"><code>{cell.code}</code></pre>
-            {cell.output && <div className="output">
+            {(cell.output || cell.images.length > 0) && <div className="output">
               <div className="output-meta"><span>Out [{cell.id}]</span><span>stream: stdout</span></div>
-              <pre>{cell.output}</pre>
+              {cell.output && <pre>{cell.output}</pre>}
+              {cell.images.map((image) => <img className="output-image" src={image} alt={`Output for cell ${cell.id}`} key={image} />)}
             </div>}
           </article>
         ))}
