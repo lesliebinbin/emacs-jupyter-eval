@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Coordinate a Jupyter kernel, ZMQ clients, and the Vite output frontend."""
+"""Coordinate a Jupyter engine and normalize its execution events."""
 
 import argparse
 import hashlib
@@ -207,39 +207,11 @@ class ZMQSubscriber:
             self.client.stop_channels()
 
 
-class ViteLauncher:
-    def __init__(self, kernel_id, event_port, vite_port=5173):
-        self.kernel_id = kernel_id
-        self.event_port = event_port
-        self.vite_port = vite_port
-
-    def launch(self):
-        environment = os.environ.copy()
-        environment["VITE_JUPYTER_EVAL_KERNEL_NAME"] = self.kernel_id
-        environment["VITE_JUPYTER_EVAL_EVENTS_URL"] = (
-            f"http://127.0.0.1:{self.event_port}/jupyter-eval-events"
-        )
-        subprocess.run(
-            [
-                "npm",
-                "run",
-                "dev",
-                "--",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(self.vite_port),
-                "--strictPort",
-            ],
-            check=True,
-            env=environment,
-            cwd=Path(__file__).parent,
-        )
-
-
 def main():
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
+
+    commands.add_parser("list-kernels")
 
     launch = commands.add_parser("launch-kernel")
     launch.add_argument("--kernel-id", required=True)
@@ -253,13 +225,10 @@ def main():
     subscribe.add_argument("--connection-file", required=True)
     subscribe.add_argument("--event-port", required=True, type=int)
 
-    vite = commands.add_parser("launch-vite")
-    vite.add_argument("--kernel-id", required=True)
-    vite.add_argument("--event-port", required=True, type=int)
-    vite.add_argument("--vite-port", default=5173, type=int)
-
     args = parser.parse_args()
-    if args.command == "launch-kernel":
+    if args.command == "list-kernels":
+        print(json.dumps(sorted(KernelSpecManager().get_all_specs())), flush=True)
+    elif args.command == "launch-kernel":
         KernelLauncher(args.kernel_id, args.buffer_path).launch()
     elif args.command == "publish":
         publisher = ZMQPublisher(args.connection_file)
@@ -273,8 +242,6 @@ def main():
                 publisher.stop()
     elif args.command == "subscribe":
         ZMQSubscriber(args.connection_file, args.event_port).launch()
-    else:
-        ViteLauncher(args.kernel_id, args.event_port, args.vite_port).launch()
 
 
 if __name__ == "__main__":

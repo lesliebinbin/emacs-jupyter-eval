@@ -1,0 +1,3 @@
+[tasks.test]
+description = "Run the Emacs Lisp test suite"
+run = "eldev test"

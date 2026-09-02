@@ -10,8 +10,16 @@
 
 (defconst ipykernel-manager--directory
   (file-name-directory (or load-file-name (locate-library "ipykernel-manager"))))
+(defconst ipykernel-manager--root-directory
+  (file-name-as-directory
+   (expand-file-name "../.." ipykernel-manager--directory)))
+(defconst ipykernel-manager--broker-directory
+  (expand-file-name "broker" ipykernel-manager--root-directory))
 (defconst ipykernel-manager--handler
-  (expand-file-name "ipykernel-handler.py" ipykernel-manager--directory))
+  (expand-file-name "broker/jupyter_eval_broker.py"
+                    ipykernel-manager--root-directory))
+(defconst ipykernel-manager--renderer-directory
+  (expand-file-name "renderer" ipykernel-manager--root-directory))
 (defconst ipykernel-manager--buffer "*ipykernel-manager*")
 (defcustom ipykernel-manager-vite-port 5173
   "Port used by the manager-owned Vite development server."
@@ -29,12 +37,14 @@
 (defun ipykernel-manager--kernel-ids ()
   "Return the installed Jupyter kernel IDs."
   (with-temp-buffer
-    (unless (zerop (call-process "jupyter" nil t nil "kernelspec" "list" "--json"))
+    (unless
+        (zerop
+         (call-process
+          "mise" nil t nil "--cd" ipykernel-manager--broker-directory
+          "exec" "--" "python" ipykernel-manager--handler "list-kernels"))
       (error "Could not list Jupyter kernels: %s" (string-trim (buffer-string))))
     (goto-char (point-min))
-    (mapcar (lambda (entry) (symbol-name (car entry)))
-            (alist-get 'kernelspecs
-                       (json-parse-buffer :object-type 'alist)))))
+    (json-parse-buffer :array-type 'list)))
 
 (defun ipykernel-manager--available-port ()
   "Return an available IPv4 loopback port."
@@ -72,9 +82,30 @@
   (make-process
    :name name
    :buffer (get-buffer-create ipykernel-manager--buffer)
-   :command (append (list "python3" ipykernel-manager--handler) arguments)
+   :command (append
+             (list "mise" "--cd" ipykernel-manager--broker-directory
+                   "exec" "--" "python" ipykernel-manager--handler)
+             arguments)
    :connection-type 'pipe
    :noquery t))
+
+(defun ipykernel-manager--start-renderer (kernel-id event-port)
+  "Start the renderer for KERNEL-ID, reading events from EVENT-PORT."
+  (let ((process-environment (copy-sequence process-environment)))
+    (setenv "VITE_JUPYTER_EVAL_KERNEL_NAME" kernel-id)
+    (setenv "VITE_JUPYTER_EVAL_EVENTS_URL"
+            (format "http://127.0.0.1:%d/jupyter-eval-events" event-port))
+    (make-process
+     :name "jupyter-eval-renderer"
+     :buffer (get-buffer-create ipykernel-manager--buffer)
+     :command
+     (list "mise" "--cd" ipykernel-manager--renderer-directory
+           "exec" "--" "npm" "run" "dev" "--"
+           "--host" "127.0.0.1"
+           "--port" (number-to-string ipykernel-manager-vite-port)
+           "--strictPort")
+     :connection-type 'pipe
+     :noquery t)))
 
 (defun ipykernel-manager--open-frontend (attempt)
   "Open the Vite frontend after it becomes reachable, up to ATTEMPT 20."
@@ -136,11 +167,7 @@
            (list "subscribe" "--connection-file" connection-file
                  "--event-port" (number-to-string event-port)))
           ipykernel-manager--vite
-          (ipykernel-manager--start-process
-           "ipykernel-vite"
-           (list "launch-vite" "--kernel-id" kernel-id
-                 "--event-port" (number-to-string event-port)
-                 "--vite-port" (number-to-string ipykernel-manager-vite-port))))
+          (ipykernel-manager--start-renderer kernel-id event-port))
     (dolist (process (list ipykernel-manager--publisher
                            ipykernel-manager--subscriber
                            ipykernel-manager--vite))
@@ -202,6 +229,8 @@
     (user-error "The current buffer must visit a file"))
   (unless (file-readable-p ipykernel-manager--handler)
     (user-error "Cannot read %s" ipykernel-manager--handler))
+  (unless (executable-find "mise")
+    (user-error "Cannot find mise; install it from https://mise.run"))
   (jupyter-eval-stop)
   (let ((buffer (get-buffer-create ipykernel-manager--buffer)))
     (with-current-buffer buffer

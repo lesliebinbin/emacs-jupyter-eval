@@ -1,0 +1,19 @@
+[tools]
+python = "3.12"
+
+[env]
+UV_PYTHON = { value = "{{ tools.python.path }}", tools = true }
+_.python.venv = { path = ".venv", create = true, uv_create_args = ["--seed"] }
+
+[tasks.setup]
+description = "Install broker dependencies"
+run = "python -m pip install -r requirements.txt"
+
+[tasks.check]
+description = "Compile-check the broker"
+run = """
+python -m py_compile \
+  jupyter_eval_broker.py \
+  scripts/jupyter_eval_listen.py \
+  scripts/jupyter_eval_send.py
+"""

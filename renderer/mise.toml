@@ -1,0 +1,22 @@
+[tools]
+node = "24"
+
+[tasks.setup]
+description = "Install locked web dependencies"
+run = "npm ci"
+
+[tasks.dev]
+description = "Start the Vite development server"
+run = "npm run dev"
+
+[tasks.build]
+description = "Build the web frontend"
+run = "npm run build"
+
+[tasks.lint]
+description = "Lint the web frontend"
+run = "npm run lint"
+
+[tasks.check]
+description = "Build and lint the web frontend"
+depends = [":build", ":lint"]

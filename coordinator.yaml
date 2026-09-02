@@ -1,0 +1,6 @@
+project_name: Coordinator
+project_slug: coordinator
+package_name: coordinator
+description: Coordinator Component
+python_version: "3.12"
+author_name: Zhibin Huang
