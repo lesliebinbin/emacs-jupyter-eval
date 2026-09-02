@@ -1,20 +1,17 @@
 monorepo_root = true
 
 [monorepo]
-config_roots = ["adapters/emacs", "broker", "engines/python", "renderer"]
+config_roots = ["adapters/emacs", "renderer"]
 lockfile = false
 
 [tasks.setup]
-description = "Install broker, engine, and renderer dependencies"
+description = "Install renderer dependencies"
 run = [
-  "mise //broker:setup",
-  "mise //engines/python:setup",
   "mise //renderer:setup",
 ]
 
 [tasks.check]
-description = "Check the broker and renderer"
+description = "Check the renderer"
 run = [
-  "mise //broker:check",
   "mise //renderer:check",
 ]

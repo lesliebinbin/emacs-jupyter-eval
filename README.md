@@ -10,39 +10,48 @@ language:
 
 | Component | Responsibility | Current implementation |
 | --- | --- | --- |
-| `adapters/emacs/` | Emacs commands, code extraction, and local service orchestration | Emacs Lisp |
-| `broker/` | Kernel discovery and lifecycle, execution submission, ZMQ transport, and normalized events | Python 3.12 |
-| `engines/python/` | Reproducible Python/IPython runtime and kernelspec registration | Python 3.12 |
+| `jupyter-eval.el` (root) | Coordinator: starts the engine kernel, broker processors, and renderer with proper sequencing | Emacs Lisp |
+| `adapters/emacs/` | `code-cells` adaptation: minor mode and region-evaluation integration | Emacs Lisp |
+| `broker/` | Pure ZMQ↔HTTP bridge: input processor (code requests) and output processor (normalized kernel events) | Python 3.12, uv |
+| `engines/python/` | Kernel lifecycle (launch, list, register kernelspecs) and reproducible runtime | Python 3.12, uv |
 | `renderer/` | Receive-only execution output panel | React and TypeScript on Node.js 24 |
 
 The runtime flow is:
 
 ```text
-adapter -> broker -> Jupyter engine
-              |
-              +---- normalized events -> renderer
+adapter -> broker input  -> Jupyter engine
+                ^
+broker output <-+
+     |
+     +---- normalized events -> renderer
 ```
 
-Each component owns a `mise.toml`, dependencies, and tasks. This keeps the
-components independently runnable and allows the broker, renderer, adapters,
-or engines to become separate repositories or Git submodules later.
-
-The root `mise.toml` only declares the mise monorepo and aggregates common
-tasks.
+The broker and engine are uv-managed Python projects; the renderer keeps its
+`mise.toml` for Node.js. The root `mise.toml` only declares the mise monorepo
+and aggregates renderer tasks.
 
 ## Setup
 
-Install all managed runtimes and dependencies:
+Python 3.12 and all dependencies are managed by [uv](https://docs.astral.sh/uv).
+The first `uv run` downloads a managed CPython 3.12 plus wheels, so pre-warm
+both projects once:
 
 ```bash
-mise install --monorepo
-mise setup
+uv sync --project broker
+uv sync --project engines/python
 ```
 
 Register the included Python engine as a Jupyter kernelspec:
 
 ```bash
-mise //engines/python:register
+uv run --project engines/python python launch.py register
+```
+
+Install renderer dependencies:
+
+```bash
+mise install --monorepo
+mise setup
 ```
 
 Run the currently enabled checks:
@@ -58,61 +67,48 @@ being rebuilt:
 mise //adapters/emacs:test
 ```
 
-Tasks can be run from the root:
-
-```bash
-mise //broker:check
-mise //renderer:dev
-mise //renderer:build
-mise //renderer:lint
-```
-
-They can also be run from within a component:
-
-```bash
-cd renderer
-mise :dev
-```
-
 ## Emacs workflow
 
-Load `adapters/emacs/jupyter-eval.el`, visit a Python file, and run
-`M-x run-jupyter-eval`. The adapter asks the broker for available engines,
-starts the selected Jupyter kernel, starts the broker's publisher and event
-subscriber, and launches the renderer using its own mise environment.
+Install the package (e.g. via quelpa with `:files ("*")`) and `require`
+`jupyter-eval`; the root file loads the `code-cells-adapt` adapter itself.
+Visit a Python file and run `M-x jupyter-eval-start`. The coordinator picks a
+kernel, launches it through the engine, waits for its connection file, starts
+the broker input and output processors, and launches the renderer using its
+own mise environment.
 
 Select a region and run `M-x jupyter-eval-send-region` to submit it. If
-`code-cells` is installed, `jupyter-eval-mode` also registers that command as
-its region evaluator.
+`code-cells` is installed, `code-cells-adapt-mode` (enabled automatically in
+Python buffers) registers that command as its region evaluator. Stop
+everything with `M-x jupyter-eval-stop`.
 
 The renderer receives events from the loopback-only broker and displays source
 code, streamed text, execution state, and PNG output.
 
+> Note: after upgrading from a previous layout of this repository, force a
+> reinstall of the package (e.g. delete `~/.emacs.d/elpa/<emacs-version>/develop/jupyter-eval-*`
+> and restart Emacs) so the new coordinator is rebuilt from the current tree.
+
 ## Independent component development
 
-The broker includes standalone listener and sender commands:
+List kernels and launch one through the engine:
 
 ```bash
-cd broker
-mise :setup
-
-python scripts/jupyter_eval_listen.py \
-  --connection-file /tmp/jupyter-eval-python.json
-
-python scripts/jupyter_eval_send.py \
-  --connection-file /tmp/jupyter-eval-python.json \
-  --code 'print("Hello from Jupyter")'
+uv run --project engines/python python launch.py list
+uv run --project engines/python python launch.py launch \
+  --kernel-id jupyter-eval-python \
+  --buffer-path /tmp/fake.py
 ```
 
-The engine launcher can be used independently:
+Submit code and serve events through the broker:
 
 ```bash
-cd engines/python
-mise :setup
+uv run --project broker python main.py input \
+  --connection-file ~/.<hash>_<hash>_kernel.json \
+  --code 'print("Hello from Jupyter")'
 
-python scripts/jupyter_eval_start_kernel.py \
-  --kernel jupyter-eval-python \
-  --connection-file /tmp/jupyter-eval-python.json
+uv run --project broker python main.py output \
+  --connection-file ~/.<hash>_<hash>_kernel.json \
+  --event-port 8766
 ```
 
 Start the renderer from its own directory:
