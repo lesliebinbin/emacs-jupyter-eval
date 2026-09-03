@@ -6,9 +6,14 @@ type Cell = {
   requestId?: string
   code: string
   output: string
+  error: string
   images: string[]
   time: string
   status: 'running' | 'complete'
+}
+
+function stripAnsi(text: string) {
+  return text.replace(/\[[0-9;]*m/g, '')
 }
 
 function appendStream(output: string, text: string) {
@@ -44,9 +49,18 @@ function App() {
           if (seen.has(eventKey)) continue
           seen.add(eventKey)
           if (event.type === 'execution_started') {
-            setCells((current) => current.some((cell) => cell.requestId === event.requestId) ? current : [...current, { id: 0, requestId: event.requestId, code: event.code, output: '', images: [], time: 'executing', status: 'running' }])
+            setCells((current) => current.some((cell) => cell.requestId === event.requestId) ? current : [...current, { id: 0, requestId: event.requestId, code: event.code, output: '', error: '', images: [], time: 'executing', status: 'running' }])
           } else if (event.requestId && event.type === 'stream') {
             setCells((current) => current.map((cell) => cell.requestId === event.requestId ? { ...cell, output: appendStream(cell.output, event.content.text) } : cell))
+          } else if (event.requestId && event.type === 'error') {
+            const content = event.content || {}
+            const traceback = Array.isArray(content.traceback)
+              ? content.traceback.map((line: string) => stripAnsi(line).replace(/\n$/, ''))
+              : []
+            const text = traceback.length > 0
+              ? traceback.join('\n')
+              : stripAnsi(`${content.ename || 'Error'}: ${content.evalue || ''}`)
+            setCells((current) => current.map((cell) => cell.requestId === event.requestId ? { ...cell, error: cell.error ? `${cell.error}\n${text}` : text } : cell))
           } else if (event.requestId && ['display_data', 'execute_result'].includes(event.type) && event.content.data?.['image/png']) {
             const image = `data:image/png;base64,${event.content.data['image/png']}`
             setCells((current) => current.map((cell) => cell.requestId === event.requestId && !cell.images.includes(image) ? { ...cell, images: [...cell.images, image] } : cell))
@@ -98,6 +112,10 @@ function App() {
               <div className="output-meta"><span>Out [{cell.id}]</span><span>stream: stdout</span></div>
               {cell.output && <pre>{cell.output}</pre>}
               {cell.images.map((image) => <img className="output-image" src={image} alt={`Output for cell ${cell.id}`} key={image} />)}
+            </div>}
+            {cell.error && <div className="error-output">
+              <div className="output-meta"><span>Out [{cell.id}]</span><span>error</span></div>
+              <pre>{cell.error}</pre>
             </div>}
           </article>
         ))}
