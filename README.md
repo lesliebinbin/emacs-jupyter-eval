@@ -14,7 +14,7 @@ language:
 | `adapters/emacs/` | `code-cells` adaptation: minor mode and region-evaluation integration | Emacs Lisp |
 | `broker/` | Pure ZMQ↔HTTP bridge: input processor (code requests) and output processor (normalized kernel events) | Python 3.12, uv |
 | `engines/python/` | Kernel lifecycle (launch, list, register kernelspecs) and reproducible runtime | Python 3.12, uv |
-| `renderer/` | Receive-only execution output panel | React and TypeScript on Node.js 24 |
+| `renderer/` | Rich execution output and interactive widget panel | React and TypeScript on Node.js 24 |
 
 The runtime flow is:
 
@@ -81,8 +81,10 @@ Select a region and run `M-x jupyter-eval-send-region` to submit it. If
 Python buffers) registers that command as its region evaluator. Stop
 everything with `M-x jupyter-eval-stop`.
 
-The renderer receives events from the loopback-only broker and displays source
-code, streamed text, execution state, errors, and PNG output.
+The renderer receives events from the loopback-only broker over SSE and
+displays source code, streams, errors, rich Jupyter MIME output, and interactive
+ipywidgets. Widget state changes return to the kernel through an origin-checked
+HTTP back-channel.
 
 If the renderer dependencies are not installed yet (`node_modules` missing),
 `jupyter-eval-start` prompts to install them (`npm ci` via mise), like vterm
@@ -116,7 +118,8 @@ uv run --project broker python main.py input \
 
 uv run --project broker python main.py output \
   --connection-file /tmp/jupyter-eval/<hash>_<hash>_kernel.json \
-  --event-port 8766
+  --event-port 8766 \
+  --allowed-origin http://127.0.0.1:5173
 ```
 
 Start the renderer from its own directory:

@@ -49,37 +49,51 @@ Emacs coordinator (jupyter-eval.el)
   ├─ broker input_processor:  stdin JSON-lines {"code"} → ZMQ shell execute
   │                            (waits for shell reply before closing)
   ├─ broker output_processor: ZMQ iopub (SUB b"") → deque(1000) →
-  │                            GET /jupyter-eval-events → {"events": [...]}, CORS *
-  │                            (execute_input normalized to execution_started)
-  └─ renderer:                vite dev on 5173; polls events every 250 ms;
-                               App.tsx cell model: {id, requestId, code, output,
-                               error, images[], status}
+  │                            GET /jupyter-eval-events → {"events": [...]}
+  │                            SSE /jupyter-eval-events/stream
+  │                            POST /jupyter-eval-comm → ZMQ shell comm message
+  │                            (browser routes restrict the renderer origin)
+  └─ renderer:                vite dev on 5173; consumes SSE events;
+                               rendermime handles static MIME bundles and
+                               html-manager handles widget models/views
 ```
 
 Event items share the shape
 `{"type", "requestId", "content": {...}}`; `execution_started` carries
 `code`. All events for one execute share the same `requestId`.
 
-## Renderer coverage (current vs target)
+## Renderer coverage
 
-| Output | Today | After rendermime | After html-manager |
-|---|---|---|---|
-| stream stdout/stderr | ✓ | ✓ | ✓ |
-| image/png (display_data / execute_result) | ✓ | ✓ | ✓ |
-| errors (traceback, ANSI-stripped) | ✓ | ✓ | ✓ |
-| execute_result text/plain | ✗ | ✓ | ✓ |
-| text/html, markdown, SVG, LaTeX | ✗ | ✓ | ✓ |
-| ipywidgets (comm) | ✗ | ✗ | ✓ |
+| Output | Supported |
+|---|---|
+| stream stdout/stderr | ✓ |
+| image/png (display_data / execute_result) | ✓ |
+| errors (traceback, ANSI-stripped) | ✓ |
+| execute_result text/plain | ✓ |
+| text/html, markdown, sanitized SVG, LaTeX | ✓ |
+| `update_display_data` | ✓ |
+| standard ipywidgets (comm) | ✓ |
 
-## Transport upgrade notes (for widgets)
+## Transport notes
 
-- Current: 250 ms HTTP polling — fine for executes, too slow for
-  interactive widgets.
-- Minimal upgrade: **SSE** for the event stream (one-way push, easy in
-  the existing ThreadingHTTPServer) + **HTTP POST** for frontend→kernel
-  comm messages relayed by the broker onto the shell channel.
-- Alternative: full **WebSocket** (JupyterLab-style). Acceptable but
-  more machinery.
+- Current transport uses **SSE** for ordered kernel events and
+  **HTTP POST** for frontend→kernel comm messages. SSE event IDs support
+  reconnect/replay from the broker's bounded deque. The original JSON snapshot
+  route remains available for diagnostics and compatibility.
+- Browser routes allow only the exact Vite origin supplied by the coordinator.
+  Keep POST requests serialized in the renderer because comm message order is
+  significant.
 - JupyterLab does browser ↔ WebSocket ↔ server ↔ ZMQ; VSCode does
   Node-side ZMQ (zeromq.js) + internal IPC. Our shape (browser ↔ HTTP
   ↔ broker ↔ ZMQ) is the same pattern.
+
+## Renderer integration details
+
+- `@jupyterlab/rendermime` needs an application-provided Markdown parser and
+  LaTeX typesetter. This renderer uses `marked` and KaTeX.
+- Jupyter marks SVG rendering unsafe. The renderer removes active and external
+  SVG content before passing the sanitized SVG to rendermime as trusted data.
+- `@jupyter-widgets/html-manager` expects Webpack's
+  `__webpack_public_path__`; Vite defines it as an empty string.
+- Binary comm buffers are base64-encoded only across HTTP and converted back to
+  Jupyter message buffers on each side.
