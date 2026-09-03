@@ -19,6 +19,10 @@ function stripAnsi(text: string) {
 function appendStream(output: string, text: string) {
   return text.split('\r').reduce((current, segment, index) => {
     if (index === 0) return current + segment
+    // A segment starting with \n is a CRLF line break: keep the
+    // accumulated content. Otherwise \r rewrites the current line
+    // (progress-bar style output).
+    if (segment.startsWith('\n')) return current + segment
     const lineStart = current.lastIndexOf('\n') + 1
     return current.slice(0, lineStart) + segment
   }, output)
