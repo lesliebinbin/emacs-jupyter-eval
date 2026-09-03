@@ -72,23 +72,24 @@
 
 (defun jupyter-eval--kernel-ids ()
   "Return the installed Jupyter kernel IDs."
-  (with-temp-buffer
-    (let ((stderr (generate-new-buffer " *jupyter-eval-list-stderr*")))
-      (unwind-protect
-          (unless
-              (zerop
-               (apply #'call-process
-                      "uv" nil (list t stderr) nil
-                      (jupyter-eval--uv-command
-                       jupyter-eval--engine-directory
-                       jupyter-eval--engine-launcher
-                       "list")))
-            (error "Could not list Jupyter kernels: %s"
-                   (string-trim
-                    (with-current-buffer stderr (buffer-string)))))
-        (kill-buffer stderr)))
-    (goto-char (point-min))
-    (json-parse-buffer :array-type 'list)))
+  (let ((stderr-file (make-temp-file "jupyter-eval-kernelspec")))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((status (call-process "jupyter" nil (list t stderr-file) nil
+                                      "kernelspec" "list" "--json")))
+            (unless (zerop status)
+              (error "Could not list Jupyter kernels: %s"
+                     (string-trim
+                      (with-temp-buffer
+                        (insert-file-contents stderr-file)
+                        (buffer-string)))))
+            (goto-char (point-min))
+            ;; Emacs 31 interns JSON object keys as symbols in alists.
+            (mapcar #'symbol-name
+                    (mapcar #'car
+                            (alist-get 'kernelspecs
+                                       (json-parse-buffer :object-type 'alist))))))
+      (delete-file stderr-file))))
 
 (defun jupyter-eval--available-port ()
   "Return an available IPv4 loopback port."
@@ -287,6 +288,8 @@
     (user-error "Cannot read %s" jupyter-eval--broker-main))
   (unless (executable-find "uv")
     (user-error "Cannot find uv; install it from https://docs.astral.sh/uv"))
+  (unless (executable-find "jupyter")
+    (user-error "Cannot find jupyter; run: uv tool install jupyter-client"))
   (unless (executable-find "mise")
     (user-error "Cannot find mise; install it from https://mise.run"))
   (jupyter-eval-stop)
