@@ -2,7 +2,10 @@
 name = "jupyter-eval-engine"
 version = "0.2.0"
 requires-python = ">=3.12"
-dependencies = ["ipykernel>=6.29,<8"]
+dependencies = [
+    "ipykernel>=6.29,<8",
+    "ipywidgets>=8,<9",
+]
 
 [tool.uv]
 package = false

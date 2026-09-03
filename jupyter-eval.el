@@ -238,7 +238,9 @@
            (jupyter-eval--uv-command
             jupyter-eval--broker-directory jupyter-eval--broker-main
             "output" "--connection-file" connection-file
-            "--event-port" (number-to-string event-port)))
+            "--event-port" (number-to-string event-port)
+            "--allowed-origin"
+            (format "http://127.0.0.1:%d" jupyter-eval-vite-port)))
           jupyter-eval--vite
           (jupyter-eval--start-renderer kernel-id event-port))
     (dolist (process (list jupyter-eval--input-processor

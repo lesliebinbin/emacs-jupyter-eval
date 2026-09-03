@@ -1,9 +1,17 @@
 # Task: Integrate JupyterLab rendering components into the renderer
 
-- **status:** proposed
-- **owner:** (unassigned)
+- **status:** complete
+- **owner:** Copilot CLI
 - **depends on:** PR #4 (CRLF stream fix) merged; branch from master afterwards
 - **created:** 2026-09-03
+- **completed:** 2026-09-03
+
+## Outcome
+
+Integrated rendermime with safe HTML/SVG rendering, Markdown, KaTeX, and
+display updates. Added ordered SSE delivery, an origin-checked HTTP comm
+back-channel with binary-buffer support, and html-manager widget views.
+Standard `IntSlider` state was verified round-trip against a live kernel.
 
 ## Mission
 

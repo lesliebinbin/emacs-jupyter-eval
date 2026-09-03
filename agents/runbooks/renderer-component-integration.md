@@ -30,8 +30,13 @@ package into the Vite renderer (rendermime, html-manager, future ones).
   rendering.
 - **`execute_result` text is the common case**: a bare expression
   arrives as `execute_result` with `text/plain`, not as a stream.
-- **The event server sends CORS `*`**; polling works cross-port from
-  the vite origin.
+- The event server requires `--allowed-origin` and returns that exact origin.
+  Keep this check on snapshot, SSE, POST, and preflight routes; a wildcard comm
+  back-channel lets arbitrary websites message the local kernel.
+- `@jupyter-widgets/html-manager` references Webpack's
+  `__webpack_public_path__`; preserve the Vite `define` shim.
+- Browser comm POSTs must remain serialized. `ThreadingHTTPServer` request
+  arrival order is not a safe substitute for Jupyter comm ordering.
 - If touching the **broker**: the input processor waits for the shell
   reply before closing (prevents dropped executes); iopub on
   ipykernel ≥ 7 uses XPUB topic subscriptions — subscribe to `b""`

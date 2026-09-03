@@ -19,6 +19,7 @@ def main():
     output_command = commands.add_parser("output")
     output_command.add_argument("--connection-file", required=True)
     output_command.add_argument("--event-port", required=True, type=int)
+    output_command.add_argument("--allowed-origin", required=True)
 
     args = parser.parse_args()
     if args.command == "input":
@@ -32,7 +33,9 @@ def main():
             finally:
                 processor.stop()
     elif args.command == "output":
-        OutputProcessor(args.connection_file, args.event_port).launch()
+        OutputProcessor(
+            args.connection_file, args.event_port, args.allowed_origin
+        ).launch()
 
 
 if __name__ == "__main__":

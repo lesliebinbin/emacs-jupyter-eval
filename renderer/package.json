@@ -11,6 +11,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@jupyter-widgets/html-manager": "^1.0.15",
+    "@jupyterlab/rendermime": "^4.6.3",
+    "katex": "^0.18.5",
+    "marked": "^18.0.11",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
