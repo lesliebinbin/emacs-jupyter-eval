@@ -28,14 +28,19 @@ class KernelLauncher:
         return f"{kernel_hash}_{buffer_hash}_kernel.json"
 
     @property
+    def connection_dir(self):
+        return Path("/tmp") / "jupyter-eval"
+
+    @property
     def connection_file(self):
-        return Path.home() / self.connection_id
+        return self.connection_dir / self.connection_id
 
     @property
     def pid_file(self):
         return self.connection_file.with_suffix(".pid")
 
     def launch(self):
+        self.connection_dir.mkdir(parents=True, exist_ok=True)
         if self.connection_file.exists():
             self.connection_file.unlink()
         if self.pid_file.exists():

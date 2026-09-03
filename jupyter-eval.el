@@ -91,6 +91,32 @@
                                        (json-parse-buffer :object-type 'alist))))))
       (delete-file stderr-file))))
 
+(defun jupyter-eval--renderer-deps-p ()
+  "Return non-nil when the renderer dependencies are installed."
+  (file-directory-p
+   (expand-file-name "node_modules" jupyter-eval--renderer-directory)))
+
+(defun jupyter-eval--ensure-renderer-deps ()
+  "Install renderer dependencies when missing, prompting first."
+  (unless (jupyter-eval--renderer-deps-p)
+    (if noninteractive
+        (message
+         "Jupyter Eval: renderer dependencies missing; run: mise --cd %s exec -- npm ci"
+         jupyter-eval--renderer-directory)
+      (when (y-or-n-p
+             (format
+              "Jupyter Eval: renderer dependencies are missing in %s. Install them now? "
+              jupyter-eval--renderer-directory))
+        (message "Jupyter Eval: installing renderer dependencies...")
+        (let ((default-directory jupyter-eval--renderer-directory))
+          (unless (zerop (call-process "mise" nil (get-buffer-create jupyter-eval--buffer)
+                                       nil "exec" "--" "npm" "ci"))
+            (user-error "Renderer dependency install failed; see buffer %s"
+                        jupyter-eval--buffer)))
+        (unless (jupyter-eval--renderer-deps-p)
+          (user-error "Renderer install did not produce node_modules in %s"
+                      jupyter-eval--renderer-directory))))))
+
 (defun jupyter-eval--available-port ()
   "Return an available IPv4 loopback port."
   (let ((probe (make-network-process
@@ -292,6 +318,7 @@
     (user-error "Cannot find jupyter; run: uv tool install jupyter-client"))
   (unless (executable-find "mise")
     (user-error "Cannot find mise; install it from https://mise.run"))
+  (jupyter-eval--ensure-renderer-deps)
   (jupyter-eval-stop)
   (let ((buffer (get-buffer-create jupyter-eval--buffer)))
     (with-current-buffer buffer

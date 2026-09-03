@@ -82,7 +82,15 @@ Python buffers) registers that command as its region evaluator. Stop
 everything with `M-x jupyter-eval-stop`.
 
 The renderer receives events from the loopback-only broker and displays source
-code, streamed text, execution state, and PNG output.
+code, streamed text, execution state, errors, and PNG output.
+
+If the renderer dependencies are not installed yet (`node_modules` missing),
+`jupyter-eval-start` prompts to install them (`npm ci` via mise), like vterm
+does for compilation.
+
+Kernel connection and pid files live under `/tmp/jupyter-eval/` with
+deterministic names; the OS clears them with its regular temporary-file
+cleanup.
 
 > Note: after upgrading from a previous layout of this repository, force a
 > reinstall of the package (e.g. delete `~/.emacs.d/elpa/<emacs-version>/develop/jupyter-eval-*`
@@ -103,11 +111,11 @@ Submit code and serve events through the broker:
 
 ```bash
 uv run --project broker python main.py input \
-  --connection-file ~/.<hash>_<hash>_kernel.json \
+  --connection-file /tmp/jupyter-eval/<hash>_<hash>_kernel.json \
   --code 'print("Hello from Jupyter")'
 
 uv run --project broker python main.py output \
-  --connection-file ~/.<hash>_<hash>_kernel.json \
+  --connection-file /tmp/jupyter-eval/<hash>_<hash>_kernel.json \
   --event-port 8766
 ```
 
