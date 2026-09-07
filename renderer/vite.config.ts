@@ -13,6 +13,7 @@ type Session = {
 
 const registryFile = process.env.JUPYTER_EVAL_REGISTRY_FILE
   ?? '/tmp/jupyter-eval/sessions.json'
+const rendererPort = 5173
 
 async function liveSession(session: Session) {
   try {
@@ -80,6 +81,24 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    {
+      name: 'jupyter-eval-canonical-origin',
+      configureServer(server) {
+        server.middlewares.use((request, response, next) => {
+          const host = request.headers.host
+          if (host === `localhost:${rendererPort}` || host === 'localhost') {
+            response.statusCode = 307
+            response.setHeader(
+              'Location',
+              `http://127.0.0.1:${rendererPort}${request.url ?? '/'}`,
+            )
+            response.end()
+            return
+          }
+          next()
+        })
+      },
+    },
     {
       name: 'jupyter-eval-session-discovery',
       configureServer(server) {
