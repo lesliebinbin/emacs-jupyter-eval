@@ -160,12 +160,16 @@ class BrowserComm implements IClassicComm {
 
 export class BrowserWidgetManager extends HTMLManager {
   private readonly commUrl: string
+  readonly interactive: boolean
+  private readonly capability?: string
   private readonly comms = new Map<string, BrowserComm>()
   private sendChain = Promise.resolve()
 
-  constructor(commUrl: string) {
+  constructor(commUrl: string, capability?: string) {
     super()
     this.commUrl = commUrl
+    this.capability = capability
+    this.interactive = capability !== undefined
   }
 
   handleEvent(event: JupyterEvent) {
@@ -224,10 +228,14 @@ export class BrowserWidgetManager extends HTMLManager {
   }
 
   private readonly sendRequest = (request: CommRequest) => {
+    if (!this.capability) return
     const pending = this.sendChain.then(async () => {
       const response = await fetch(this.commUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Jupyter-Eval-Capability': this.capability!,
+        },
         body: JSON.stringify(request),
       })
       if (!response.ok) throw new Error(`Comm bridge returned HTTP ${response.status}`)
@@ -419,5 +427,12 @@ export function WidgetOutput({
 
   return error
     ? <pre className="mime-error">{error}</pre>
-    : <div className="widget-output" ref={host} />
+    : <div
+        aria-disabled={!manager.interactive}
+        className={`widget-output ${manager.interactive ? '' : 'read-only'}`}
+        ref={(element) => {
+          host.current = element
+          if (element) element.inert = !manager.interactive
+        }}
+      />
 }

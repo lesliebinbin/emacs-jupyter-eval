@@ -2,7 +2,6 @@
 """Jupyter Eval Python engine: launch kernels, list and register kernelspecs."""
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -15,17 +14,14 @@ from jupyter_client.kernelspec import KernelSpecManager
 class KernelLauncher:
     """Launch a Jupyter kernel and report its connection and pid files."""
 
-    def __init__(self, kernel_id, emacs_buffer_absolute_path):
+    def __init__(self, kernel_id, emacs_buffer_absolute_path, session_id):
         self.kernel_id = kernel_id
         self.emacs_buffer_absolute_path = Path(emacs_buffer_absolute_path).resolve()
+        self.session_id = session_id
 
     @property
     def connection_id(self):
-        kernel_hash = hashlib.sha256(self.kernel_id.encode()).hexdigest()[:16]
-        buffer_hash = hashlib.sha256(
-            str(self.emacs_buffer_absolute_path).encode()
-        ).hexdigest()[:16]
-        return f"{kernel_hash}_{buffer_hash}_kernel.json"
+        return f"{self.session_id}_kernel.json"
 
     @property
     def connection_dir(self):
@@ -102,6 +98,7 @@ def main():
     launch = commands.add_parser("launch")
     launch.add_argument("--kernel-id", required=True)
     launch.add_argument("--buffer-path", required=True)
+    launch.add_argument("--session-id", required=True)
 
     commands.add_parser("list")
     commands.add_parser("register")
@@ -109,7 +106,11 @@ def main():
     args = parser.parse_args()
     if args.command == "launch":
         print(
-            json.dumps(KernelLauncher(args.kernel_id, args.buffer_path).launch()),
+            json.dumps(
+                KernelLauncher(
+                    args.kernel_id, args.buffer_path, args.session_id
+                ).launch()
+            ),
             flush=True,
         )
     elif args.command == "list":

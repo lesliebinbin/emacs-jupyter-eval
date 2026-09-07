@@ -22,17 +22,17 @@ package into the Vite renderer (rendermime, html-manager, future ones).
 - **CRLF stream output**: shell escapes (`!cmd`) and pipes emit `\r\n`.
   Stream-append logic must treat a `\n`-starting segment after `\r` as
   a line break, not a progress-bar rewrite (fixed in PR #4).
-- **Vite env vars are baked at dev-server start**: the coordinator
-  passes `VITE_JUPYTER_EVAL_EVENTS_URL` at spawn. A browser page opened
-  in a previous session keeps polling the old port — always test with a
-  fresh page load (add `?cachebust=1`).
+- **Session endpoints are runtime-discovered**: the coordinator atomically
+  writes `/tmp/jupyter-eval/sessions.json`; Vite serves only entries whose
+  broker health identity and generation match. Never add capabilities to this
+  registry.
 - **Error events carry ANSI color codes** in tracebacks — strip before
   rendering.
 - **`execute_result` text is the common case**: a bare expression
   arrives as `execute_result` with `text/plain`, not as a stream.
 - The event server requires `--allowed-origin` and returns that exact origin.
-  Keep this check on snapshot, SSE, POST, and preflight routes; a wildcard comm
-  back-channel lets arbitrary websites message the local kernel.
+  Keep this check on snapshot, SSE, health, POST, and preflight routes. Comm
+  POSTs additionally require the session-generation capability.
 - `@jupyter-widgets/html-manager` references Webpack's
   `__webpack_public_path__`; preserve the Vite `define` shim.
 - Browser comm POSTs must remain serialized. `ThreadingHTTPServer` request

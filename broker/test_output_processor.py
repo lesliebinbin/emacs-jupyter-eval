@@ -1,4 +1,5 @@
 import base64
+import json
 import threading
 import unittest
 from collections import deque
@@ -44,6 +45,9 @@ def processor_without_kernel():
     processor.event_sequence = 0
     processor.shell_lock = threading.Lock()
     processor.allowed_origin = "http://127.0.0.1:5173"
+    processor.session_id = "session-one"
+    processor.generation = "generation-one"
+    processor.interactive_capability = "secret-one"
     processor.client = FakeClient()
     return processor
 
@@ -119,6 +123,92 @@ class OutputProcessorTest(unittest.TestCase):
                     response.headers["Access-Control-Allow-Origin"],
                     processor.allowed_origin,
                 )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_health_exposes_identity_without_capability(self):
+        processor = processor_without_kernel()
+        server = ThreadingHTTPServer(("127.0.0.1", 0), processor._handler())
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        url = f"http://127.0.0.1:{server.server_port}/jupyter-eval-health"
+
+        try:
+            with urlopen(url, timeout=2) as response:
+                health = json.load(response)
+            self.assertEqual(health["sessionId"], "session-one")
+            self.assertEqual(health["generation"], "generation-one")
+            self.assertEqual(health["status"], "running")
+            self.assertNotIn("capability", health)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_comm_route_requires_the_session_capability(self):
+        processor = processor_without_kernel()
+        server = ThreadingHTTPServer(("127.0.0.1", 0), processor._handler())
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        url = f"http://127.0.0.1:{server.server_port}/jupyter-eval-comm"
+        body = json.dumps(
+            {
+                "type": "comm_msg",
+                "message_id": "browser-message",
+                "comm_id": "widget-model",
+                "data": {"method": "update"},
+                "metadata": {},
+                "buffers": [],
+            }
+        ).encode()
+
+        try:
+            unauthorized = Request(
+                url,
+                data=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": processor.allowed_origin,
+                },
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as context:
+                urlopen(unauthorized, timeout=2)
+            self.assertEqual(context.exception.code, 403)
+            self.assertEqual(processor.client.shell_channel.messages, [])
+
+            wrong_session = Request(
+                url,
+                data=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": processor.allowed_origin,
+                    "X-Jupyter-Eval-Capability": "secret-two",
+                },
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as context:
+                urlopen(wrong_session, timeout=2)
+            self.assertEqual(context.exception.code, 403)
+
+            authorized = Request(
+                url,
+                data=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": processor.allowed_origin,
+                    "X-Jupyter-Eval-Capability": "secret-one",
+                },
+                method="POST",
+            )
+            with urlopen(authorized, timeout=2) as response:
+                self.assertEqual(response.status, 202)
+            self.assertEqual(
+                processor.client.shell_channel.messages[0]["header"]["msg_id"],
+                "browser-message",
+            )
         finally:
             server.shutdown()
             server.server_close()

@@ -1,6 +1,7 @@
 """Relay Jupyter kernel IOPub events to HTTP clients."""
 
 import base64
+import hmac
 import json
 import threading
 from collections import deque
@@ -13,7 +14,15 @@ from jupyter_client import BlockingKernelClient
 
 
 class OutputProcessor:
-    def __init__(self, connection_file, event_port, allowed_origin):
+    def __init__(
+        self,
+        connection_file,
+        event_port,
+        allowed_origin,
+        session_id,
+        generation,
+        interactive_capability,
+    ):
         self.connection_file = Path(connection_file).expanduser()
         if not self.connection_file.is_file():
             raise FileNotFoundError(
@@ -21,6 +30,9 @@ class OutputProcessor:
             )
         self.event_port = event_port
         self.allowed_origin = allowed_origin
+        self.session_id = session_id
+        self.generation = generation
+        self.interactive_capability = interactive_capability
         self.events = deque(maxlen=1000)
         self.events_condition = threading.Condition()
         self.event_sequence = 0
@@ -40,7 +52,11 @@ class OutputProcessor:
 
     def _events_after(self, sequence):
         with self.events_condition:
-            return [(event_id, event) for event_id, event in self.events if event_id > sequence]
+            return [
+                (event_id, event)
+                for event_id, event in self.events
+                if event_id > sequence
+            ]
 
     def _wait_for_events(self, sequence, timeout=15):
         with self.events_condition:
@@ -84,7 +100,10 @@ class OutputProcessor:
             content["target_name"] = target_name
 
         try:
-            buffers = [base64.b64decode(buffer, validate=True) for buffer in encoded_buffers]
+            buffers = [
+                base64.b64decode(buffer, validate=True)
+                for buffer in encoded_buffers
+            ]
         except ValueError as error:
             raise ValueError("comm buffers must contain valid base64") from error
 
@@ -152,6 +171,15 @@ class OutputProcessor:
                 )
                 self.send_header("Vary", "Origin")
 
+            def _interactive_authorized(self):
+                capability = self.headers.get("X-Jupyter-Eval-Capability", "")
+                if hmac.compare_digest(
+                    capability, processor.interactive_capability
+                ):
+                    return True
+                self.send_error(403, "Interactive capability is invalid")
+                return False
+
             def do_GET(self):
                 if not self._origin_allowed():
                     return
@@ -160,8 +188,25 @@ class OutputProcessor:
                     self._send_snapshot()
                 elif path == "/jupyter-eval-events/stream":
                     self._send_stream()
+                elif path == "/jupyter-eval-health":
+                    self._send_health()
                 else:
                     self.send_error(404)
+
+            def _send_health(self):
+                body = json.dumps(
+                    {
+                        "sessionId": processor.session_id,
+                        "generation": processor.generation,
+                        "status": "running",
+                    }
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self._cors_header()
+                self.end_headers()
+                self.wfile.write(body)
 
             def _send_snapshot(self):
                 body = json.dumps({"events": processor._snapshot()}).encode()
@@ -209,6 +254,8 @@ class OutputProcessor:
                     return
                 if not self._origin_allowed():
                     return
+                if not self._interactive_authorized():
+                    return
                 try:
                     if self.headers.get("Content-Type") != "application/json":
                         raise ValueError("Content-Type must be application/json")
@@ -239,7 +286,10 @@ class OutputProcessor:
                     return
                 self.send_response(204)
                 self._cors_header()
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self.send_header(
+                    "Access-Control-Allow-Headers",
+                    "Content-Type, X-Jupyter-Eval-Capability",
+                )
                 self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
                 self.end_headers()
 

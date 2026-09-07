@@ -45,15 +45,16 @@ state) → frontend creates a view → user interacts → frontend sends
 
 ```
 Emacs coordinator (jupyter-eval.el)
-  ├─ engine launch.py:        kernel spawn; /tmp/jupyter-eval/<sha16>_<sha16>_kernel.json
-  ├─ broker input_processor:  stdin JSON-lines {"code"} → ZMQ shell execute
-  │                            (waits for shell reply before closing)
-  ├─ broker output_processor: ZMQ iopub (SUB b"") → deque(1000) →
+  ├─ session registry:        source path → independent generation/process set
+  │                            public metadata → /tmp/jupyter-eval/sessions.json
+  ├─ engine launch.py:        kernel spawn; one connection file per session ID
+  ├─ per-session input:       stdin JSON-lines {"code"} → ZMQ shell execute
+  ├─ per-session output:      ZMQ iopub (SUB b"") → deque(1000) →
   │                            GET /jupyter-eval-events → {"events": [...]}
   │                            SSE /jupyter-eval-events/stream
-  │                            POST /jupyter-eval-comm → ZMQ shell comm message
-  │                            (browser routes restrict the renderer origin)
-  └─ renderer:                vite dev on 5173; consumes SSE events;
+  │                            GET /jupyter-eval-health → identity/generation
+  │                            authorized POST /jupyter-eval-comm → ZMQ shell
+  └─ shared renderer:         Vite on 5173; discovers and health-checks sessions;
                                rendermime handles static MIME bundles and
                                html-manager handles widget models/views
 ```
@@ -76,13 +77,18 @@ Event items share the shape
 
 ## Transport notes
 
-- Current transport uses **SSE** for ordered kernel events and
+- Current transport uses **SSE** for ordered, session-local kernel events and
   **HTTP POST** for frontend→kernel comm messages. SSE event IDs support
   reconnect/replay from the broker's bounded deque. The original JSON snapshot
   route remains available for diagnostics and compatibility.
-- Browser routes allow only the exact Vite origin supplied by the coordinator.
-  Keep POST requests serialized in the renderer because comm message order is
-  significant.
+- Browser routes allow only the exact shared renderer origin. Comm POSTs also
+  require a random capability belonging to the broker's session generation;
+  discovery never contains that capability. Keep POST requests serialized in
+  the renderer because comm message order is significant.
+- Plain `/sessions/<session-id>` URLs construct read-only widget managers.
+  Emacs xwidget URLs carry the capability in the fragment, which is not sent
+  to the Vite server. Session routes must construct separate event, cell, and
+  widget-manager state.
 - JupyterLab does browser ↔ WebSocket ↔ server ↔ ZMQ; VSCode does
   Node-side ZMQ (zeromq.js) + internal IPC. Our shape (browser ↔ HTTP
   ↔ broker ↔ ZMQ) is the same pattern.
