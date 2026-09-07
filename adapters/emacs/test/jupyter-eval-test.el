@@ -89,4 +89,36 @@
     (should-not (gethash "/tmp/one.py" jupyter-eval--sessions))
     (should (eq two (gethash "/tmp/two.py" jupyter-eval--sessions)))))
 
+(ert-deftest jupyter-eval-opens-read-only-browser-and-authorized-xwidget-urls ()
+  (let* ((jupyter-eval--sessions (make-hash-table :test #'equal))
+         (session (jupyter-eval--make-session
+                   :id "session-one"
+                   :source-path "/tmp/one.py"
+                   :label "python - one.py"
+                   :capability "secret"))
+         opened
+         (original-fboundp (symbol-function 'fboundp)))
+    (puthash "/tmp/one.py" session jupyter-eval--sessions)
+    (cl-letf (((symbol-function 'url-retrieve-synchronously)
+               (lambda (&rest _arguments)
+                 (get-buffer-create " *jupyter-eval-test-url*")))
+              ((symbol-function 'browse-url)
+               (lambda (url &rest _arguments) (setq opened url)))
+              ((symbol-function 'fboundp)
+               (lambda (symbol)
+                 (and (not (eq symbol 'xwidget-webkit-browse-url))
+                      (funcall original-fboundp symbol)))))
+      (jupyter-eval--open-frontend session 0)
+      (should (equal opened
+                     "http://127.0.0.1:5173/sessions/session-one")))
+    (cl-letf (((symbol-function 'url-retrieve-synchronously)
+               (lambda (&rest _arguments)
+                 (get-buffer-create " *jupyter-eval-test-url*")))
+              ((symbol-function 'xwidget-webkit-browse-url)
+               (lambda (url &rest _arguments) (setq opened url))))
+      (jupyter-eval--open-frontend session 0)
+      (should (equal
+               opened
+               "http://127.0.0.1:5173/sessions/session-one#capability=secret")))))
+
 ;;; jupyter-eval-test.el ends here
