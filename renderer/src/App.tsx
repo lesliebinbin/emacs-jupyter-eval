@@ -29,6 +29,14 @@ type Cell = {
   status: 'running' | 'complete'
 }
 
+type Session = {
+  id: string
+  generation: string
+  label: string
+  kernelName: string
+  eventUrl: string
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -82,18 +90,98 @@ function RichCellOutput({
     : <MimeOutput data={output.data} metadata={output.metadata} />
 }
 
-function App() {
+function capabilityFromLocation() {
+  return new URLSearchParams(window.location.hash.slice(1)).get('capability')
+    ?? undefined
+}
+
+function useSessions(refreshInterval = 0) {
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        const response = await fetch('/api/jupyter-eval/sessions', {
+          cache: 'no-store',
+        })
+        if (!response.ok) {
+          throw new Error(`Session discovery returned HTTP ${response.status}`)
+        }
+        const result = await response.json() as { sessions?: Session[] }
+        if (active) setSessions(Array.isArray(result.sessions) ? result.sessions : [])
+      } catch (error) {
+        console.error('Could not discover Jupyter Eval sessions', error)
+        if (active) setSessions([])
+      } finally {
+        if (active) setLoaded(true)
+      }
+    }
+    void load()
+    const timer = refreshInterval > 0
+      ? window.setInterval(() => void load(), refreshInterval)
+      : undefined
+    return () => {
+      active = false
+      if (timer !== undefined) window.clearInterval(timer)
+    }
+  }, [refreshInterval])
+
+  return { sessions, loaded }
+}
+
+function Header({ status }: { status?: string }) {
+  return (
+    <header className="topbar">
+      <div className="brand">
+        <span className="brand-mark">&gt;_</span>
+        <a href="/" style={{ color: 'inherit', textDecoration: 'none' }}>Jupyter Eval</a>
+      </div>
+      {status && <div className="kernel-status">{status}</div>}
+    </header>
+  )
+}
+
+function SessionIndex() {
+  const { sessions, loaded } = useSessions(1000)
+  return (
+    <main className="app-shell">
+      <Header status={`${sessions.length} active session${sessions.length === 1 ? '' : 's'}`} />
+      <section className="intro">
+        <div>
+          <p className="eyebrow">LOCAL SESSION INDEX</p>
+          <h1>Active kernels,<br /><em>one shared renderer.</em></h1>
+          <p className="lede">Choose a running session to inspect its live output. Browser links are read-only; interactive access is granted only by Emacs.</p>
+        </div>
+      </section>
+      <section className="feed-header">
+        <div><p className="eyebrow">RUNNING NOW</p><h2>Jupyter sessions</h2></div>
+      </section>
+      <section className="session-list" aria-live="polite">
+        {loaded && sessions.length === 0
+          && <div className="empty-state">No active Jupyter Eval sessions.</div>}
+        {!loaded && <div className="empty-state">Discovering sessions...</div>}
+        {sessions.map((session) => (
+          <a className="session-link" href={`/sessions/${session.id}`} key={session.id}>
+            <strong>{session.label}</strong>
+            <span>{session.kernelName}</span>
+          </a>
+        ))}
+      </section>
+    </main>
+  )
+}
+
+function SessionFeed({ session }: { session: Session }) {
   const [connected, setConnected] = useState(false)
   const [cells, setCells] = useState<Cell[]>([])
-  const kernelName = import.meta.env.VITE_JUPYTER_EVAL_KERNEL_NAME || 'not selected'
-  const eventsUrl = import.meta.env.VITE_JUPYTER_EVAL_EVENTS_URL
-    || (import.meta.env.DEV
-      ? 'http://127.0.0.1:8766/jupyter-eval-events'
-      : '/jupyter-eval-events')
+  const capability = useMemo(() => capabilityFromLocation(), [])
+  const eventsUrl = session.eventUrl
   const streamUrl = useMemo(() => relatedUrl(eventsUrl, 'stream'), [eventsUrl])
   const manager = useMemo(
-    () => new BrowserWidgetManager(relatedUrl(eventsUrl, 'comm')),
-    [eventsUrl],
+    () => new BrowserWidgetManager(relatedUrl(eventsUrl, 'comm'), capability),
+    [capability, eventsUrl],
   )
 
   useEffect(() => {
@@ -197,10 +285,7 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div className="brand"><span className="brand-mark">&gt;_</span><span>Jupyter Eval</span></div>
-        <div className="kernel-status"><StatusDot active={connected} />{connected ? 'Kernel connected' : 'Waiting for kernel'}</div>
-      </header>
+      <Header />
 
       <section className="intro">
         <div>
@@ -211,8 +296,9 @@ function App() {
         <aside className="connection-card">
           <div className="connection-heading"><StatusDot active={connected} /><span>Jupyter connection</span></div>
           <label htmlFor="kernel-name">Selected kernel</label>
-          <input id="kernel-name" value={kernelName} readOnly />
+          <input id="kernel-name" value={session.label} readOnly />
           <p>{connected ? 'Receiving execution events.' : 'Waiting for the local bridge.'}</p>
+          <p className="access-mode">{manager.interactive ? 'Interactive xwidget' : 'Read-only browser'}</p>
         </aside>
       </section>
 
@@ -242,6 +328,31 @@ function App() {
       </section>
     </main>
   )
+}
+
+function SessionRoute({ sessionId }: { sessionId: string }) {
+  const { sessions, loaded } = useSessions(1000)
+  const session = sessions.find((candidate) => candidate.id === sessionId)
+  if (session) return <SessionFeed key={session.generation} session={session} />
+  return (
+    <main className="app-shell">
+      <Header />
+      <section className="intro">
+        <div>
+          <p className="eyebrow">SESSION UNAVAILABLE</p>
+          <h1>{loaded ? 'This session is no longer running.' : 'Discovering session...'}</h1>
+          <p className="lede"><a href="/">Return to the active session list.</a></p>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function App() {
+  const match = window.location.pathname.match(/^\/sessions\/([^/]+)\/?$/)
+  return match
+    ? <SessionRoute sessionId={decodeURIComponent(match[1])} />
+    : <SessionIndex />
 }
 
 export default App

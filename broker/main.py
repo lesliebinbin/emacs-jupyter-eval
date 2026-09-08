@@ -20,6 +20,9 @@ def main():
     output_command.add_argument("--connection-file", required=True)
     output_command.add_argument("--event-port", required=True, type=int)
     output_command.add_argument("--allowed-origin", required=True)
+    output_command.add_argument("--session-id", required=True)
+    output_command.add_argument("--generation", required=True)
+    output_command.add_argument("--interactive-capability", required=True)
 
     args = parser.parse_args()
     if args.command == "input":
@@ -34,7 +37,12 @@ def main():
                 processor.stop()
     elif args.command == "output":
         OutputProcessor(
-            args.connection_file, args.event_port, args.allowed_origin
+            args.connection_file,
+            args.event_port,
+            args.allowed_origin,
+            args.session_id,
+            args.generation,
+            args.interactive_capability,
         ).launch()
 
 

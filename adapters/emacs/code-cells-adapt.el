@@ -9,7 +9,8 @@
 ;;
 ;; Adapts `code-cells' evaluation to the Jupyter Eval coordinator in the
 ;; package root `jupyter-eval.el'.  The public API is `jupyter-eval-start',
-;; `jupyter-eval-send-region', and `jupyter-eval-stop'.
+;; `jupyter-eval-send-region', `jupyter-eval-stop', and
+;; `jupyter-eval-stop-all'.
 
 ;;; Code:
 
