@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { JSONObject, JSONValue } from '@lumino/coreutils'
 import {
   BrowserWidgetManager,
@@ -176,6 +176,7 @@ function SessionIndex() {
 function SessionFeed({ session }: { session: Session }) {
   const [connected, setConnected] = useState(false)
   const [cells, setCells] = useState<Cell[]>([])
+  const activeCellRef = useRef<HTMLElement | null>(null)
   const capability = useMemo(() => capabilityFromLocation(), [])
   const eventsUrl = session.eventUrl
   const streamUrl = useMemo(() => relatedUrl(eventsUrl, 'stream'), [eventsUrl])
@@ -183,6 +184,28 @@ function SessionFeed({ session }: { session: Session }) {
     () => new BrowserWidgetManager(relatedUrl(eventsUrl, 'comm'), capability),
     [capability, eventsUrl],
   )
+
+  const activeCell = useMemo(() => {
+    return [...cells].reverse().find((cell) => cell.status === 'running') ?? cells[cells.length - 1]
+  }, [cells])
+
+  useEffect(() => {
+    if (!activeCellRef.current) return
+    const frame = window.requestAnimationFrame(() => {
+      activeCellRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [
+    activeCell?.requestId,
+    activeCell?.status,
+    activeCell?.output,
+    activeCell?.richOutputs.length,
+    activeCell?.error,
+  ])
 
   useEffect(() => {
     const events = new EventSource(streamUrl)
@@ -308,23 +331,30 @@ function SessionFeed({ session }: { session: Session }) {
 
       <section className="feed" aria-live="polite">
         {cells.length === 0 && <div className="empty-state">Run a code cell from Emacs to begin.</div>}
-        {cells.map((cell) => (
-          <article className="cell-card" key={cell.requestId}>
-            <div className="cell-meta"><span>In [{cell.status === 'running' ? '*' : cell.id}]</span><time>{cell.status === 'running' ? 'executing' : cell.time}</time></div>
-            <pre className="source"><code>{cell.code}</code></pre>
-            {(cell.output || cell.richOutputs.length > 0) && <div className="output">
-              <div className="output-meta"><span>Out [{cell.id}]</span><span>kernel output</span></div>
-              {cell.output && <pre>{cell.output}</pre>}
-              {cell.richOutputs.map((output) => (
-                <RichCellOutput output={output} manager={manager} key={output.id} />
-              ))}
-            </div>}
-            {cell.error && <div className="error-output">
-              <div className="output-meta"><span>Out [{cell.id}]</span><span>error</span></div>
-              <pre>{cell.error}</pre>
-            </div>}
-          </article>
-        ))}
+        {cells.map((cell) => {
+          const isActive = cell.requestId === activeCell?.requestId
+          return (
+            <article
+              className={`cell-card ${isActive ? 'is-active' : ''} ${cell.status === 'running' ? 'is-running' : ''}`}
+              key={cell.requestId}
+              ref={isActive ? (element) => { activeCellRef.current = element } : undefined}
+            >
+              <div className="cell-meta"><span>In [{cell.status === 'running' ? '*' : cell.id}]</span><time>{cell.status === 'running' ? 'executing' : cell.time}</time></div>
+              <pre className="source"><code>{cell.code}</code></pre>
+              {(cell.output || cell.richOutputs.length > 0) && <div className="output">
+                <div className="output-meta"><span>Out [{cell.id}]</span><span>kernel output</span></div>
+                {cell.output && <pre>{cell.output}</pre>}
+                {cell.richOutputs.map((output) => (
+                  <RichCellOutput output={output} manager={manager} key={output.id} />
+                ))}
+              </div>}
+              {cell.error && <div className="error-output">
+                <div className="output-meta"><span>Out [{cell.id}]</span><span>error</span></div>
+                <pre>{cell.error}</pre>
+              </div>}
+            </article>
+          )
+        })}
       </section>
     </main>
   )
