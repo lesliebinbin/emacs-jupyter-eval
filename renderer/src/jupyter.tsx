@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { HTMLManager } from '@jupyter-widgets/html-manager'
 import type { ICallbacks, IClassicComm } from '@jupyter-widgets/base'
+import { Sanitizer } from '@jupyterlab/apputils'
 import {
   RenderMimeRegistry,
   standardRendererFactories,
 } from '@jupyterlab/rendermime'
+import type { IRenderMime } from '@jupyterlab/rendermime-interfaces'
 import type { KernelMessage } from '@jupyterlab/services'
 import type { JSONObject, JSONValue } from '@lumino/coreutils'
 import { Widget } from '@lumino/widgets'
@@ -286,8 +288,63 @@ const latexTypesetter = {
   },
 }
 
+class VideoSanitizer extends Sanitizer {
+  constructor() {
+    super()
+    this.patchAllowedAttributes()
+  }
+
+  private patchAllowedAttributes() {
+    const options = (this as unknown as { _options?: { allowedAttributes?: Record<string, string[]> } })._options
+    if (options?.allowedAttributes) {
+      options.allowedAttributes.source = Array.from(new Set([
+        ...(options.allowedAttributes.source ?? []),
+        'src',
+        'type',
+        'media',
+      ]))
+      options.allowedAttributes.video = Array.from(new Set([
+        ...(options.allowedAttributes.video ?? []),
+        'playsinline',
+        'webkit-playsinline',
+      ]))
+      options.allowedAttributes.track = Array.from(new Set([
+        ...(options.allowedAttributes.track ?? []),
+        'src',
+      ]))
+    }
+  }
+
+  override setAllowedSchemes(scheme: Array<string>): void {
+    super.setAllowedSchemes(scheme)
+    this.patchAllowedAttributes()
+  }
+
+  override sanitize(dirty: string, options?: IRenderMime.ISanitizerOptions): string {
+    if (options?.allowedAttributes) {
+      options.allowedAttributes.source = Array.from(new Set([
+        ...(options.allowedAttributes.source ?? []),
+        'src',
+        'type',
+        'media',
+      ]))
+      options.allowedAttributes.video = Array.from(new Set([
+        ...(options.allowedAttributes.video ?? []),
+        'playsinline',
+        'webkit-playsinline',
+      ]))
+      options.allowedAttributes.track = Array.from(new Set([
+        ...(options.allowedAttributes.track ?? []),
+        'src',
+      ]))
+    }
+    return super.sanitize(dirty, options)
+  }
+}
+
 const renderMime = new RenderMimeRegistry({
   initialFactories: standardRendererFactories,
+  sanitizer: new VideoSanitizer(),
   markdownParser: {
     async render(source) {
       return await marked.parse(source)

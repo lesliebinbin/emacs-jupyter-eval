@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@jupyter-widgets/html-manager": "^1.0.15",
+    "@jupyterlab/apputils": "^4.7.3",
     "@jupyterlab/rendermime": "^4.6.3",
     "katex": "^0.18.5",
     "marked": "^18.0.11",

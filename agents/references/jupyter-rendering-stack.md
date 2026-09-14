@@ -71,7 +71,7 @@ Event items share the shape
 | image/png (display_data / execute_result) | ✓ |
 | errors (traceback, ANSI-stripped) | ✓ |
 | execute_result text/plain | ✓ |
-| text/html, markdown, sanitized SVG, LaTeX | ✓ |
+| text/html, markdown, HTML5 video, sanitized SVG, LaTeX | ✓ |
 | `update_display_data` | ✓ |
 | standard ipywidgets (comm) | ✓ |
 
@@ -99,6 +99,9 @@ Event items share the shape
   LaTeX typesetter. This renderer uses `marked` and KaTeX.
 - Jupyter marks SVG rendering unsafe. The renderer removes active and external
   SVG content before passing the sanitized SVG to rendermime as trusted data.
+- The HTML sanitizer preserves `src` on `<source>` and `<track>` tags as well
+  as `playsinline` attributes on `<video>` to support HTML5 video playback
+  (e.g. from Matplotlib's `to_html5_video()`).
 - `@jupyter-widgets/html-manager` expects Webpack's
   `__webpack_public_path__`; Vite defines it as an empty string.
 - Binary comm buffers are base64-encoded only across HTTP and converted back to
