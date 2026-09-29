@@ -18,8 +18,58 @@ button { cursor: pointer; }.connection-card button { width: 100%; margin-top: 12
 .mime-output img, .mime-output svg { display: block; max-width: 100%; height: auto; border-radius: 6px; }
 .mime-output .jp-RenderedHTML, .mime-output .jp-RenderedMarkdown { line-height: 1.55; }
 .mime-output a { color: #b8a8ff; }
-.mime-output table { border-collapse: collapse; }
-.mime-output th, .mime-output td { padding: 6px 9px; border: 1px solid #3a3c49; }
+.mime-output table {
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 14px 0;
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #d9dbe8;
+  background: #191a22;
+  border-radius: 8px;
+  border: 1px solid #30323d;
+  overflow: hidden;
+}
+.mime-output thead th {
+  background: #20212b;
+  color: #9f8cff;
+  font-weight: 600;
+  border-bottom: 2px solid #30323d;
+  padding: 8px 14px;
+  text-align: right;
+}
+.mime-output tbody th {
+  background: #1c1d27;
+  color: #777989;
+  font-weight: 500;
+  border-right: 1px solid #30323d;
+  border-bottom: 1px solid #252733;
+  padding: 6px 12px;
+  text-align: right;
+}
+.mime-output tbody td {
+  padding: 6px 14px;
+  border-bottom: 1px solid #252733;
+  border-left: 1px solid #252733;
+  color: #cdd0e0;
+  text-align: right;
+}
+.mime-output tbody tr:nth-child(even) td {
+  background: #161720;
+}
+.mime-output tbody tr:nth-child(odd) td {
+  background: #191a22;
+}
+.mime-output tbody tr:last-child td,
+.mime-output tbody tr:last-child th {
+  border-bottom: none;
+}
+.mime-output tbody tr:hover td,
+.mime-output tbody tr:hover th {
+  background: #232533;
+  color: #ffffff;
+}
 .mime-error { margin: 15px 0 0; color: #e8a1a1; white-space: pre-wrap; }
 .widget-output { padding: 10px; border-radius: 6px; background: #f5f5f5; color: #222; }
 .widget-output.read-only { opacity: .72; pointer-events: none; filter: grayscale(.2); }
